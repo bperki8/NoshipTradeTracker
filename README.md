@@ -5,8 +5,8 @@ Analyze imports and exports flowing through the Port of New Orleans using public
 ## Data Sources
 
 - **US Census Bureau** (primary) -> Port-level, commodity-level trade data with country, value, and weight breakdowns.
-- **UN Comtrade** -> National-level international trade data for cross-referencing.
-- **Port NOLA** -> Supplementary cargo statistics from the port's public reports.
+- **UN Comtrade** (seconday, untested, almost certainly not working) -> National-level international trade data for cross-referencing.
+- **Port NOLA** (seconday, untested, almost certainly not working) -> Supplementary cargo statistics from the port's public reports.
 
 ## Setup
 
@@ -65,9 +65,7 @@ Opens an interactive browser dashboard with:
 
 ## Product Categories
 
-<!---
-TODO: I think this needs to be updated.
--->
+TODO: I think this needs to be updated, because some of the categorizations have changed since original writing.
 
 Products are classified using the Harmonized System (HS) code chapters:
 
