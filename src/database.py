@@ -7,21 +7,18 @@ deployed publicly and must never touch and API or a key).
 The ingest script calls :func:`save_records` to persist data into a committed
 SQLite file (``data/trade.db``). The dashboard calls :func:`load_dataframe`
 to read it back. Because the schemas keeps every dimension in a real column
-(source, country, district/port, ...), you can lager ingest aditional
+(source, country, district/port, ...), you can later ingest aditional
 countries, ports, or sources into the *same* file and the dashboard will pick
 them up automatically.
 """
-
-# TODO: I need to add the weaponizable column.
-
 from __future__ import annotations
 
+import pandas as pd
 import sqlite3
+
 from pathlib import Path
 
-import pandas as pd
-
-from .models import TradeRecord, TradeDirection, ProductCategory
+from .models import TradeRecord
 from .categories import classify_hs_code
 
 # Default location of the committed database, resolved relative to the project
@@ -93,7 +90,7 @@ def connect(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-  """Create the trade_records table if it dow not already exist."""
+  """Create the trade_records table if it does not already exist."""
   conn.execute(_CREATE_TABLE_SQL)
   conn.commit()
 

@@ -7,15 +7,59 @@ trade API and never loads an API key. To refresh or expand the data, run
 
 Run with: streamlit run dashboard.py
 """
-
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
-import pandas as pd
 
+from analytics import log_visit
 from src.models import ProductCategory
 from src import database
+from streamlit_js_eval import streamlit_js_eval
+
+st.set_page_config(
+  page_title="NOLA Trade Tracker",
+  page_icon="🚢",
+  layout="wide",
+)
+
+# Prevent double-logging
+if "logged_visit" not in st.session_state:
+    st.session_state.logged_visit = False
+
+# Fetch location (async JS)
+location_data = streamlit_js_eval(
+    js_expressions="await fetch('https://ipapi.co/json').then(r => r.json())",
+    key="get_location"
+)
+
+# Log only once, and only when location is ready
+if not st.session_state.logged_visit:
+    if location_data:
+        log_visit(extra={
+            "country": location_data.get("country_name"),
+            "city": location_data.get("city"),
+            "region": location_data.get("region"),
+            "timezone": location_data.get("timezone"),
+            "ip": location_data.get("ip")
+        })
+        st.session_state.logged_visit = True
+    else:
+        # First run: no location yet, log minimal visit
+        log_visit()
+        st.session_state.logged_visit = True
+
+st.title("NOSHIP Trade Tracker")
+st.markdown(
+  """
+  Analyze imports and exports flowing through the Port of New Orleans to Israel.
+  To report issues, use the contact links at
+  <a href="https://noship.org" target="_blank" style="color:#D90000; font-weight:bold;">
+    noship.org
+  </a>.
+  """,
+  unsafe_allow_html=True,
+)
 
 # Palestinian Light Theme
 pio.templates["palestine_light"] = pio.templates["plotly_white"].update({
@@ -148,12 +192,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.set_page_config(
-  page_title="NOLA Trade Tracker",
-  page_icon="🚢",
-  layout="wide",
-)
-
 # Replace Streamlit avatar with ship icon
 st.markdown(
   """
@@ -175,18 +213,6 @@ st.markdown(
     50%       { transform: translateX(4px); opacity: 0.55; }
   }
   </style>
-  """,
-  unsafe_allow_html=True,
-)
-
-st.title("NOSHIP Trade Tracker")
-st.markdown(
-  """
-  Analyze imports and exports flowing through the Port of New Orleans to Israel.
-  To report issues, use the contact links at
-  <a href="https://noship.org" target="_blank" style="color:#D90000; font-weight:bold;">
-    noship.org
-  </a>.
   """,
   unsafe_allow_html=True,
 )
