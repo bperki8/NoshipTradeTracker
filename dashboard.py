@@ -7,21 +7,24 @@ trade API and never loads an API key. To refresh or expand the data, run
 
 Run with: streamlit run dashboard.py
 """
-import plotly.io as pio
+
 import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
+import pandas as pd
 
 from src.models import ProductCategory
 from src import database
 
 # Palestinian Light Theme
 pio.templates["palestine_light"] = pio.templates["plotly_white"].update({
-    "layout": {
-        "font": {"color": "#000000"},
-        "paper_bgcolor": "#FFFFFF",
-        "plot_bgcolor": "#FFFFFF",
-        "colorway": ["#D90000", "#007A3D", "#000000"],
-    }
+  "layout": {
+    "font": {"color": "#000000"},
+    "paper_bgcolor": "#FFFFFF",
+    "plot_bgcolor": "#FFFFFF",
+    "colorway": ["#D90000", "#007A3D", "#000000"],
+  }
 })
 
 # Force Light Mode
@@ -29,17 +32,17 @@ pio.templates.default = "palestine_light"
 
 # Light Mode CSS
 st.markdown(
-    """
-    <style>
-    body, .stApp, .main, .block-container {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-    }
-    .stSidebar, .stSidebar > div {
-        background-color: #F5F5F5 !important;
-    }
-    </style>
-    """,
+  """
+  <style>
+  body, .stApp, .main, .block-container {
+    background-color: #FFFFFF !important;
+    color: #000000 !important;
+  }
+  .stSidebar, .stSidebar > div {
+    background-color: #F5F5F5 !important;
+  }
+  </style>
+  """,
   unsafe_allow_html=True,
 )
 
@@ -49,24 +52,25 @@ st.set_page_config(
   layout="wide",
 )
 
+# Replace Streamlit avatar with ship icon
 st.markdown(
   """
   <style>
   [data-testid="stStatusWidget"] [data-testid="Avatar"],
   [data-testid="stStatusWidget"] img,
   [data-testid="stStatusWidget"] svg {
-      display: none !important;
+    display: none !important;
   }
   [data-testid="stStatusWidget"] > div::before {
-      content: "🚢";
-      font-size: 1.1rem;
-      margin-right: 0.4rem;
-      display: inline-block;
-      animation: nola-sail 1.4s ease-in-out infinite;
+    content: "🚢";
+    font-size: 1.1rem;
+    margin-right: 0.4rem;
+    display: inline-block;
+    animation: nola-sail 1.4s ease-in-out infinite;
   }
   @keyframes nola-sail {
-      0%, 100%  { transform: translateX(0);   opacity: 1; }
-      50%       { transform: translateX(4px); opacity: 0.55; }
+    0%, 100%  { transform: translateX(0); opacity: 1; }
+    50%       { transform: translateX(4px); opacity: 0.55; }
   }
   </style>
   """,
@@ -76,32 +80,28 @@ st.markdown(
 st.title("Port of New Orleans Trade Tracker")
 st.markdown("Analyze imports and exports flowing through the Port of New Orleans.")
 
-
-# --- Data loading (from the committed local databae, cached) ---
+# --- Data loading ---
 @st.cache_data(show_spinner="Loading trade database...")
 def load_data():
   return database.load_dataframe()
 
-
 df = load_data()
 
 if df.empty:
-  st.error("No data found in the local databawse.")
+  st.error("No data found in the local database.")
   st.info(
     "Run the ingest step locally and commit the result:\n\n"
-    "```bash\npython ingest.py          # default: Israel, last 13 years\n```\n\n"
+    "```bash\npython ingest.py\n```\n\n"
     "This creates `data/trade.db`, which this dashboard reads from."
   )
   st.stop()
 
-
-# --- Sidebar Filters (populated dynamically from whatever is in the DB) ---
+# --- Sidebar Filters ---
 st.sidebar.header("Filters")
 
 countries = sorted(df["country_name"].dropna().unique().tolist())
-selected_countries  = st.sidebar.multiselect(
+selected_countries = st.sidebar.multiselect(
   "Countries", countries, default=countries,
-  help="Driven by the data in the database. Ingest more countries to add options.",
 )
 
 ports = sorted(df["port_name"].dropna().unique().tolist())
@@ -127,7 +127,6 @@ else:
 category_options = [c.value for c in ProductCategory]
 present_categories = [c for c in category_options if c in set(df["category"])]
 selected_categories = st.sidebar.multiselect("Product Categories", present_categories)
-
 
 # --- Apply Filters ---
 filtered_df = df.copy()
@@ -157,23 +156,38 @@ if filtered_df.empty:
   st.warning("No records match the current filters. Try widening them.")
   st.stop()
 
+# --- NOSHIP Sidebar Badge + Logo Placeholder ---
+st.sidebar.markdown(
+  """
+  <hr style="margin-top: 2rem; margin-bottom: 1rem;">
+  <div style="text-align: center; font-size: 0.9rem; opacity: 0.85;">
+
+    <a href="https://noship.org" target="_blank" title="Visit NOSHIP.org">
+      <img 
+        src="https://i0.wp.com/noship.org/wp-content/uploads/2025/01/noship-logo-2.png?fit=2932%2C2062&ssl=1"
+        width="120"
+        style="opacity: 0.95; margin-bottom: 0.4rem;"
+      >
+    </a>
+
+  </div>
+  """,
+  unsafe_allow_html=True,
+)
+
 
 # --- Summary Metrics ---
 col1, col2, col3, col4 = st.columns(4)
 
 total_value = filtered_df["value_usd"].sum()
-
 not_weaponizable_value = filtered_df[filtered_df["is_weaponizable"] == 0]["value_usd"].sum()
 weaponizable_value = filtered_df[filtered_df["is_weaponizable"] == 1]["value_usd"].sum()
-
 n_countries = filtered_df["country_name"].nunique()
 
 col1.metric("Total Trade Value", f"${total_value / 1e6:,.1f}M")
 col2.metric("Weaponizable", f"${weaponizable_value / 1e6:,.1f}M")
 col3.metric("Not Weaponizable", f"${not_weaponizable_value / 1e6:,.1f}M")
 col4.metric("Trading Partners", f"{n_countries}")
-
-
 
 # --- Charts ---
 st.markdown("---")
@@ -183,92 +197,144 @@ st.subheader("Weaponizable vs. Not Split")
 pie_col1, pie_col2 = st.columns(2)
 
 with pie_col1:
-    dir_df = filtered_df.groupby("is_weaponizable")["value_usd"].sum().reset_index()
-
-    dir_df["weaponizable_label"] = dir_df["is_weaponizable"].map({
-        0: "Not Weaponizable",
-        1: "Weaponizable",
-    })
-
-    fig_pie = px.pie(
-        dir_df,
-        values="value_usd",
-        names="weaponizable_label",
-        color="is_weaponizable",
-        color_discrete_map={
-            0: "#007A3D",  # green
-            1: "#D90000",  # red
-        },
-    )
-
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-with pie_col2:
-    st.markdown("### Weaponizability Breakdown")
-
-    cat_summary = (
-        filtered_df.groupby("is_weaponizable")["value_usd"]
-        .sum()
-        .sort_values(ascending=False)
-        .reset_index()
-    )
-
-    cat_summary["Weaponizable"] = cat_summary["is_weaponizable"].map({
-        0: "Not Weaponizable",
-        1: "Weaponizable",
-    })
-
-    cat_summary["value_formatted"] = cat_summary["value_usd"].apply(
-        lambda x: f"${x / 1e6:,.1F}M" if x >= 1e6 else f"${x / 1e3:,.1f}K"
-    )
-
-    st.dataframe(
-        cat_summary[["Weaponizable", "value_formatted"]].rename(
-            columns={"value_formatted": "Trade Value"}
-        ),
-        hide_index=True,
-        use_container_width=True,
-    )
-
-st.subheader("Weaponizability by Category")
-
-# Aggregate by category + weaponizability
-stack_df = (
-    filtered_df.groupby(["category", "is_weaponizable"])["value_usd"]
-    .sum()
-    .reset_index()
-)
-
-# Human-readable labels
-stack_df["weaponizable_label"] = stack_df["is_weaponizable"].map({
+  dir_df = filtered_df.groupby("is_weaponizable")["value_usd"].sum().reset_index()
+  dir_df["weaponizable_label"] = dir_df["is_weaponizable"].map({
     0: "Not Weaponizable",
     1: "Weaponizable",
+  })
+  fig_pie = px.pie(
+    dir_df,
+    values="value_usd",
+    names="weaponizable_label",
+    color="is_weaponizable",
+    color_discrete_map={0: "#007A3D", 1: "#D90000"},
+  )
+  st.plotly_chart(fig_pie, use_container_width=True)
+
+with pie_col2:
+  st.markdown("### Weaponizability Breakdown")
+  cat_summary = (
+    filtered_df.groupby("is_weaponizable")["value_usd"]
+    .sum()
+    .sort_values(ascending=False)
+    .reset_index()
+  )
+  cat_summary["Weaponizable"] = cat_summary["is_weaponizable"].map({
+    0: "Not Weaponizable",
+    1: "Weaponizable",
+  })
+  cat_summary["value_formatted"] = cat_summary["value_usd"].apply(
+    lambda x: f"${x / 1e6:,.1F}M" if x >= 1e6 else f"${x / 1e3:,.1f}K"
+  )
+  st.dataframe(
+    cat_summary[["Weaponizable", "value_formatted"]].rename(
+      columns={"value_formatted": "Trade Value"}
+    ),
+    hide_index=True,
+    use_container_width=True,
+  )
+
+# Weaponizability by Category
+st.subheader("Weaponizability by Category")
+stack_df = (
+  filtered_df.groupby(["category", "is_weaponizable"])["value_usd"]
+  .sum()
+  .reset_index()
+)
+stack_df["weaponizable_label"] = stack_df["is_weaponizable"].map({
+  0: "Not Weaponizable",
+  1: "Weaponizable",
 })
-
-# Sort categories by total trade value
 category_order = (
-    stack_df.groupby("category")["value_usd"].sum().sort_values(ascending=False).index
+  stack_df.groupby("category")["value_usd"].sum().sort_values(ascending=False).index
 )
-
 fig_stack = px.bar(
-    stack_df,
-    x="category",
-    y="value_usd",
-    color="weaponizable_label",
-    category_orders={"category": category_order},
-    color_discrete_map={
-        "Not Weaponizable": "#007A3D",  # green
-        "Weaponizable": "#D90000",      # red
-    },
+  stack_df,
+  x="category",
+  y="value_usd",
+  color="weaponizable_label",
+  category_orders={"category": category_order},
+  color_discrete_map={
+    "Not Weaponizable": "#007A3D",
+    "Weaponizable": "#D90000",
+  },
 )
-
 fig_stack.update_layout(barmode="stack")
-
 st.plotly_chart(fig_stack, use_container_width=True)
 
+# Trade Value Over Time (dual-axis)
+st.subheader("Trade Value Over Time")
+
+total_time_df = (
+  filtered_df.groupby("period")["value_usd"]
+  .sum()
+  .reset_index()
+)
+weapon_time_df = (
+  filtered_df[filtered_df["is_weaponizable"] == 1]
+  .groupby("period")["value_usd"]
+  .sum()
+  .reset_index()
+)
+
+merged = total_time_df.merge(
+  weapon_time_df,
+  on="period",
+  how="left",
+  suffixes=("_total", "_weapon")
+)
+merged["value_usd_weapon"] = merged["value_usd_weapon"].fillna(0)
+merged["pct_weaponizable"] = (
+  merged["value_usd_weapon"] / merged["value_usd_total"]
+).fillna(0) * 100
+
+fig = go.Figure()
+
+fig.add_trace(go.Scatter(
+  x=merged["period"],
+  y=merged["value_usd_total"],
+  mode="lines+markers",
+  name="Total Trade",
+  line=dict(color="#000000", width=2),
+  yaxis="y1",
+))
+
+fig.add_trace(go.Scatter(
+  x=merged["period"],
+  y=merged["value_usd_weapon"],
+  mode="lines+markers",
+  name="Weaponizable Trade",
+  line=dict(color="#D90000", width=2),
+  yaxis="y1",
+))
+
+fig.add_trace(go.Scatter(
+  x=merged["period"],
+  y=merged["pct_weaponizable"],
+  mode="lines+markers",
+  name="% Weaponizable",
+  line=dict(color="#007A3D", width=2, dash="dash"),
+  yaxis="y2",
+))
+
+fig.update_layout(
+  height=450,
+  yaxis=dict(title="Trade Value (USD)", showgrid=False),
+  yaxis2=dict(
+    title="% Weaponizable",
+    overlaying="y",
+    side="right",
+    showgrid=False,
+    range=[0, max(merged["pct_weaponizable"].max() * 1.2, 5)],
+  ),
+  legend=dict(orientation="h"),
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# Two-column layout for category + partners/commodities
 chart_col1, chart_col2 = st.columns(2)
 
-# Trade by Category (bar chart)
 with chart_col1:
   st.subheader("Trade Value by Category")
   cat_df = (
@@ -289,9 +355,6 @@ with chart_col1:
   fig_cat.update_layout(showlegend=False, height=500)
   st.plotly_chart(fig_cat, use_container_width=True)
 
-# Top Commodities (most useful when focused on a single country) + Top Partners.
-# When the DB holds one country, the partners chart is a single bar, so we lead
-# with commodities; both stay meaningful as more countries are ingested.
 with chart_col2:
   if n_countries > 1:
     st.subheader("Top 15 Trading Partners")
@@ -335,28 +398,7 @@ with chart_col2:
     fig_comm.update_layout(showlegend=False, height=500)
     st.plotly_chart(fig_comm, use_container_width=True)
 
-
-# Trade Over Time (line chart)
-st.subheader("Trade Value Over Time")
-time_df = (
-  filtered_df.groupby(["period", "direction"])["value_usd"]
-  .sum()
-  .reset_index()
-  .sort_values("period")
-)
-fig_time = px.line(
-  time_df,
-  x="period",
-  y="value_usd",
-  color="direction",
-  labels={"value_usd": "Value (USD)", "period": "Period", "direction": "Direction"},
-  markers=True,
-)
-fig_time.update_layout(height=400)
-st.plotly_chart(fig_time, use_container_width=True)
-
-
-# Category Treemap (category -> commodity, useful in single-country focus)
+# Category Treemap
 st.subheader("Trade Composition")
 treemap_df = (
   filtered_df.assign(commodity=filtered_df["commodity"].fillna("(unlabeled)"))
@@ -381,26 +423,21 @@ st.subheader("Import vs. Export Split")
 pie_col1, pie_col2 = st.columns(2)
 
 with pie_col1:
-    dir_df = filtered_df.groupby("direction")["value_usd"].sum().reset_index()
+  dir_df = filtered_df.groupby("direction")["value_usd"].sum().reset_index()
+  dir_df["direction"] = dir_df["direction"].str.lower()
+  fig_pie = px.pie(
+    dir_df,
+    values="value_usd",
+    names="direction",
+    color="direction",
+    color_discrete_map={
+      "import": "#007A3D",
+      "export": "#D90000",
+    },
+  )
+  st.plotly_chart(fig_pie, use_container_width=True)
 
-    # Normalize direction labels if needed (optional)
-    dir_df["direction"] = dir_df["direction"].str.lower()
-
-    fig_pie = px.pie(
-        dir_df,
-        values="value_usd",
-        names="direction",
-        color="direction",
-        color_discrete_map={
-            "import": "#007A3D",  # green
-            "export": "#D90000",  # red
-        },
-    )
-
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-
-# --- Raw Data Table ---
+# Raw Data Table
 st.markdown("---")
 st.subheader("Raw Data")
 st.dataframe(
@@ -415,4 +452,19 @@ st.download_button(
   csv,
   "nola_trade_data.csv",
   "text/csv",
+)
+
+# --- NOSHIP Footer Attribution ---
+st.markdown(
+  """
+  <div style="text-align: center; margin-top: 3rem; opacity: 0.75;">
+    Built by 
+    <a href="https://noship.org" target="_blank" 
+       style="text-decoration: none; color: #D90000; font-weight: bold;"
+       title="Visit NOSHIP.org">
+      NOSHIP.
+    </a>
+  </div>
+  """,
+  unsafe_allow_html=True,
 )
