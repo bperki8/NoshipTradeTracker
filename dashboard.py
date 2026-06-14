@@ -434,7 +434,7 @@ fig.add_trace(go.Scatter(
   y=merged["value_usd_weapon"],
   mode="lines+markers",
   name="Weaponizable Trade",
-  line=dict(color="#D90000", width=2),
+  line=dict(color="#007A3D", width=2),
   yaxis="y1",
 ))
 
@@ -443,7 +443,7 @@ fig.add_trace(go.Scatter(
   y=merged["pct_weaponizable"],
   mode="lines+markers",
   name="% Weaponizable",
-  line=dict(color="#007A3D", width=2, dash="dash"),
+  line=dict(color="#D90000", width=2, dash="dash"),
   yaxis="y2",
 ))
 
