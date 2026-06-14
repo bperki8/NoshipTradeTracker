@@ -23,6 +23,16 @@ st.set_page_config(
   layout="wide",
 )
 
+st.markdown("""
+<!-- Open Graph metadata -->
+<meta property="og:title" content="NOSHIP Trade Tracker" />
+<meta property="og:description" content="Analyze imports and exports flowing through the Port of New Orleans to Israel." />
+<meta property="og:image" content="https://i0.wp.com/noship.org/wp-content/uploads/2025/01/noship-logo-2.png?fit=2932%2C2062&ssl=1" />
+<meta property="og:url" content="https://noshiptradetracker.streamlit.app/" />
+<meta name="twitter:card" content="summary_large_image" />
+""", unsafe_allow_html=True)
+
+
 # Prevent double-logging
 if "logged_visit" not in st.session_state:
     st.session_state.logged_visit = False
