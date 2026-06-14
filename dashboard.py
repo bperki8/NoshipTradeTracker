@@ -343,7 +343,10 @@ with col3:
     metric_card("Not Weaponizable", f"${not_weaponizable_value / 1e6:,.1f}M", "metric-green")
 
 with col4:
-    metric_card("Years Covered", f"{n_years}", "metric-black")
+    if year_range[0] == year_range[1]:
+        metric_card("Years Covered", f"{year_range[0]}", "metric-black")
+    else:
+        metric_card("Years Covered", f"{year_range[0]} - {year_range[1]}", "metric-black")
 
 # --- Charts ---
 st.markdown("---")
