@@ -18,7 +18,7 @@ from src import database
 from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(
-  page_title="NOLA Trade Tracker",
+  page_title="NOSHIP Trade Tracker",
   page_icon="🚢",
   layout="wide",
 )
