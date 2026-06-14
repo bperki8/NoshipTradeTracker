@@ -1,0 +1,11 @@
+[theme]
+primaryColor="#D90000"          # red for all widgets
+backgroundColor="#FFFFFF"
+secondaryBackgroundColor="#F5F5F5"
+textColor="#000000"
+font="sans serif"
+
+[theme.sidebar]
+backgroundColor="#FFFFFF"
+textColor="#000000"
+primaryColor="#D90000"          # force sidebar widgets to use the same red
