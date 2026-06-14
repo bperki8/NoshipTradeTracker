@@ -390,33 +390,145 @@ with pie_col2:
     use_container_width=True,
   )
 
-# Weaponizability by Category
-st.subheader("Weaponizability by Category")
-stack_df = (
-  filtered_df.groupby(["category", "is_weaponizable"])["value_usd"]
-  .sum()
-  .reset_index()
+# CATEGORY TREEMAP
+st.subheader("Trade Composition")
+
+# Placeholder so subtitle appears ABOVE the toggles
+subtitle_placeholder = st.empty()
+
+# --- User Controls ---
+colA, colB = st.columns([1, 1])
+
+# Total number of unique commodities for slider max
+total_commodities = (
+  filtered_df["commodity"].fillna("(unlabeled)").nunique()
 )
-stack_df["weaponizable_label"] = stack_df["is_weaponizable"].map({
-  0: "Not Weaponizable",
-  1: "Weaponizable",
-})
-category_order = (
-  stack_df.groupby("category")["value_usd"].sum().sort_values(ascending=False).index
+
+with colA:
+  mode = st.radio(
+    "Display mode",
+    ["Top N", "All"],
+    horizontal=True
+  )
+
+with colB:
+  TOP_N = st.slider(
+    "Number of commodities",
+    min_value=10,
+    max_value=total_commodities,
+    value=70,
+    step=10,
+    help="Controls how many commodities appear in the treemap."
+  )
+
+# --- Prepare Data ---
+df = filtered_df.assign(
+  commodity=filtered_df["commodity"].fillna("(unlabeled)")
 )
-fig_stack = px.bar(
-  stack_df,
-  x="category",
-  y="value_usd",
-  color="weaponizable_label",
-  category_orders={"category": category_order},
-  color_discrete_map={
-    "Not Weaponizable": "#007A3D",
-    "Weaponizable": "#D90000",
-  },
+
+# Compute weaponizable ratio per category
+category_ratio = (
+  df.groupby("category")["is_weaponizable"]
+    .mean()
+    .rename("weaponizable_ratio")
 )
-fig_stack.update_layout(barmode="stack")
-st.plotly_chart(fig_stack, use_container_width=True)
+
+# Compute weaponizable value per commodity
+weaponizable_value = (
+  df[df["is_weaponizable"] == 1]
+    .groupby(["category", "commodity"])["value_usd"]
+    .sum()
+    .rename("weaponizable_value")
+)
+
+# Aggregate commodity-level values
+agg = (
+  df.groupby(["category", "commodity", "is_weaponizable"])["value_usd"]
+    .sum()
+    .reset_index()
+    .merge(category_ratio, on="category")
+    .merge(weaponizable_value, on=["category", "commodity"], how="left")
+    .fillna({"weaponizable_value": 0})
+)
+
+# --- Sorting Logic (always by total value now) ---
+agg = agg.sort_values("value_usd", ascending=False)
+
+# --- Top N Logic ---
+if mode == "Top N":
+  treemap_df = agg.head(TOP_N)
+else:
+  treemap_df = agg.copy()
+
+# --- Dynamic Subtitle (computed AFTER toggles, displayed ABOVE them) ---
+country_label = ", ".join(selected_countries) if selected_countries else "all countries"
+port_label = ", ".join(selected_ports) if selected_ports else "all ports"
+
+prefix = f"Top {TOP_N} commodities" if mode == "Top N" else "All commodities"
+year_text = f"from {year_range[0]} to {year_range[1]}"
+
+if direction_choice == "Exports":
+  subtitle = f"{prefix} exported from {port_label} to {country_label} {year_text}."
+elif direction_choice == "Imports":
+  subtitle = f"{prefix} imported to {port_label} from {country_label} {year_text}."
+else:
+  subtitle = f"{prefix} shipped between {port_label} and {country_label} {year_text}."
+
+subtitle_placeholder.caption(subtitle)
+
+# --- Color Logic ---
+treemap_df["color_value"] = treemap_df.apply(
+  lambda row: row["is_weaponizable"]
+  if row["commodity"] != "(category-level)"
+  else row["weaponizable_ratio"],
+  axis=1
+)
+
+# --- Hover Text ---
+treemap_df["hover"] = treemap_df.apply(
+  lambda row: (
+    f"<b>Category:</b> {row['category']}<br>"
+    f"<b>Commodity:</b> {row['commodity']}<br>"
+    f"<b>Total Value:</b> ${row['value_usd']:,.0f}<br>"
+    f"<b>Weaponizable Value:</b> ${row['weaponizable_value']:,.0f}<br>"
+    f"<b>Commodity Weaponizable:</b> {'Yes' if row['is_weaponizable'] else 'No'}<br>"
+    f"<b>Category Weaponizable %:</b> {row['weaponizable_ratio']*100:.1f}%"
+  ),
+  axis=1
+)
+
+# --- Build Treemap ---
+if not treemap_df.empty:
+  fig_tree = px.treemap(
+    treemap_df,
+    path=["category", "commodity"],
+    values="value_usd",
+    color="color_value",
+    hover_data={"hover": True},
+    custom_data=["hover"],
+    color_continuous_scale=[
+      (0.0, "#007A3D"),  # green
+      (0.5, "#FFD700"),  # yellow
+      (1.0, "#D90000"),  # red
+    ],
+    range_color=(0, 1),
+  )
+
+  # Use custom hover text
+  fig_tree.update_traces(hovertemplate="%{customdata[0]}<extra></extra>")
+
+  # Clean legend: only top/bottom labels, no title
+  fig_tree.update_coloraxes(
+    colorbar=dict(
+      tickvals=[0, 1],
+      ticktext=["Not Weaponizable", "Weaponizable"],
+      title=None
+    )
+  )
+
+  fig_tree.update_layout(height=600)
+  st.plotly_chart(fig_tree, use_container_width=True)
+
 
 # Trade Value Over Time (dual-axis)
 st.subheader("Trade Value Over Time")
@@ -488,6 +600,36 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
+
+# Weaponizability by Category
+st.subheader("Weaponizability by Category")
+stack_df = (
+  filtered_df.groupby(["category", "is_weaponizable"])["value_usd"]
+  .sum()
+  .reset_index()
+)
+stack_df["weaponizable_label"] = stack_df["is_weaponizable"].map({
+  0: "Not Weaponizable",
+  1: "Weaponizable",
+})
+category_order = (
+  stack_df.groupby("category")["value_usd"].sum().sort_values(ascending=False).index
+)
+fig_stack = px.bar(
+  stack_df,
+  x="category",
+  y="value_usd",
+  color="weaponizable_label",
+  category_orders={"category": category_order},
+  color_discrete_map={
+    "Not Weaponizable": "#007A3D",
+    "Weaponizable": "#D90000",
+  },
+)
+fig_stack.update_layout(barmode="stack")
+st.plotly_chart(fig_stack, use_container_width=True)
+
+
 # Two-column layout for category + partners/commodities
 chart_col1, chart_col2 = st.columns(2)
 
@@ -555,25 +697,6 @@ with chart_col2:
     fig_comm.update_layout(showlegend=False, height=500)
     st.plotly_chart(fig_comm, use_container_width=True)
 
-# Category Treemap
-st.subheader("Trade Composition")
-treemap_df = (
-  filtered_df.assign(commodity=filtered_df["commodity"].fillna("(unlabeled)"))
-  .groupby(["category", "commodity"])["value_usd"]
-  .sum()
-  .reset_index()
-  .nlargest(50, "value_usd")
-)
-if not treemap_df.empty:
-  fig_tree = px.treemap(
-    treemap_df,
-    path=["category", "commodity"],
-    values="value_usd",
-    color="value_usd",
-    color_continuous_scale="RdYlGn",
-  )
-  fig_tree.update_layout(height=600)
-  st.plotly_chart(fig_tree, use_container_width=True)
 
 # Import vs Export Pie
 st.subheader("Import vs. Export Split")
