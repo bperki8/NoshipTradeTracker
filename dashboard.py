@@ -46,6 +46,108 @@ st.markdown(
   unsafe_allow_html=True,
 )
 
+
+# Force all links to open in a new tab + visited links turn green
+st.markdown(
+  """
+  <style>
+    a:visited {
+      color: #007A3D !important;
+      font-weight: bold;
+    }
+  </style>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const links = document.querySelectorAll("a");
+      links.forEach(link => {
+        link.setAttribute("target", "_blank");
+      });
+    });
+  </script>
+  """,
+  unsafe_allow_html=True,
+)
+
+# Soft metric backgrounds + left color bars (final working version)
+st.markdown(
+    """
+    <style>
+
+    .metric-card {
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        border-left: 4px solid transparent;
+    }
+
+    .metric-label {
+        font-size: 0.85rem;
+        opacity: 0.75;
+        margin-bottom: 4px;
+    }
+
+    .metric-value {
+        font-size: 1.4rem;
+        font-weight: bold;
+        margin-top: 2px;
+    }
+
+    .metric-black {
+        background-color: #F2F2F2;
+        border-left-color: #000000;
+    }
+
+    .metric-red {
+        background-color: #FDE7E7;
+        border-left-color: #D90000;
+    }
+
+    .metric-green {
+        background-color: #E6F4EA;
+        border-left-color: #007A3D;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Hover and glow glassmorphism effect for the summary cards.
+st.markdown(
+    """
+    <style>
+
+    /* Base state: define transition so hover animates smoothly */
+    .metric-card {
+        transition: all 0.18s ease-in-out;
+        will-change: transform, box-shadow;
+    }
+
+    /* Hover glow effect */
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.18);  /* slightly stronger so it shows */
+    }
+
+    /* Slightly intensify the left border on hover */
+    .metric-black:hover {
+        border-left-color: #333333 !important;
+    }
+
+    .metric-red:hover {
+        border-left-color: #B00000 !important;
+    }
+
+    .metric-green:hover {
+        border-left-color: #006A34 !important;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.set_page_config(
   page_title="NOLA Trade Tracker",
   page_icon="🚢",
@@ -77,8 +179,18 @@ st.markdown(
   unsafe_allow_html=True,
 )
 
-st.title("Port of New Orleans Trade Tracker")
-st.markdown("Analyze imports and exports flowing through the Port of New Orleans.")
+st.title("NOSHIP Trade Tracker")
+st.markdown(
+  """
+  Analyze imports and exports flowing through the Port of New Orleans to Israel.
+  To report issues, use the contact links at
+  <a href="https://noship.org" target="_blank" style="color:#D90000; font-weight:bold;">
+    noship.org
+  </a>.
+  """,
+  unsafe_allow_html=True,
+)
+
 
 # --- Data loading ---
 @st.cache_data(show_spinner="Loading trade database...")
@@ -176,18 +288,36 @@ st.sidebar.markdown(
 )
 
 
-# --- Summary Metrics ---
+# --- Summary Metrics (custom cards) ---
 col1, col2, col3, col4 = st.columns(4)
 
 total_value = filtered_df["value_usd"].sum()
 not_weaponizable_value = filtered_df[filtered_df["is_weaponizable"] == 0]["value_usd"].sum()
 weaponizable_value = filtered_df[filtered_df["is_weaponizable"] == 1]["value_usd"].sum()
-n_countries = filtered_df["country_name"].nunique()
+n_years = year_range[1] - year_range[0] + 1
 
-col1.metric("Total Trade Value", f"${total_value / 1e6:,.1f}M")
-col2.metric("Weaponizable", f"${weaponizable_value / 1e6:,.1f}M")
-col3.metric("Not Weaponizable", f"${not_weaponizable_value / 1e6:,.1f}M")
-col4.metric("Trading Partners", f"{n_countries}")
+def metric_card(label, value, color_class):
+    st.markdown(
+        f"""
+        <div class="metric-card {color_class}">
+            <div class="metric-label">{label}</div>
+            <div class="metric-value">{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col1:
+    metric_card("Total Trade Value", f"${total_value / 1e6:,.1f}M", "metric-black")
+
+with col2:
+    metric_card("Weaponizable", f"${weaponizable_value / 1e6:,.1f}M", "metric-red")
+
+with col3:
+    metric_card("Not Weaponizable", f"${not_weaponizable_value / 1e6:,.1f}M", "metric-green")
+
+with col4:
+    metric_card("Years Covered", f"{n_years}", "metric-black")
 
 # --- Charts ---
 st.markdown("---")
@@ -355,6 +485,7 @@ with chart_col1:
   fig_cat.update_layout(showlegend=False, height=500)
   st.plotly_chart(fig_cat, use_container_width=True)
 
+n_countries = filtered_df["country_name"].nunique()
 with chart_col2:
   if n_countries > 1:
     st.subheader("Top 15 Trading Partners")
@@ -462,8 +593,8 @@ st.markdown(
     <a href="https://noship.org" target="_blank" 
        style="text-decoration: none; color: #D90000; font-weight: bold;"
        title="Visit NOSHIP.org">
-      NOSHIP.
-    </a>
+      NOSHIP
+    </a>.
   </div>
   """,
   unsafe_allow_html=True,
