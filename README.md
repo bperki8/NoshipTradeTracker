@@ -2,51 +2,68 @@
 
 Analyze imports and exports flowing through the Port of New Orleans using public trade data.
 
+The project has two halves:
+
+1.  **Ingest (runs locally with your API keys):** `ingest.py` downloads trade
+    data for a country and writes it into a committed SQLite database
+    (`data/trade.db`).
+2.  **Dashboard (deploys publicly, no keys):** `dashboard.py` reads only from
+    that committed database. It never calls a trade API and never loads a token,
+    so it is safe to host on Streamlit Community Cloud.
+
 ## Data Sources
 
 - **US Census Bureau** (primary) -> Port-level, commodity-level trade data with country, value, and weight breakdowns.
-- **UN Comtrade** (seconday, untested, almost certainly not working) -> National-level international trade data for cross-referencing.
-- **Port NOLA** (seconday, untested, almost certainly not working) -> Supplementary cargo statistics from the port's public reports.
 
-## Setup
+## Setup (local, for ingest only)
 
-1. Install dependcies:
+1.  Install dependencies:
 
-```bash
-pip install -r requirements.txt
-```
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-2. Get your API keys:
+2.  Get a free Census Bureau API key: https://api.census.gov/data/key_signup.html
 
-- **Census Bureau**: Free at https://api.census.gov/data/key_signup.html
-- **UN Comtrade**: Free at https://comtradeplus.un.org
+3.  Configure your key:
+    ```bash
+    cp .env.example .env
+    # Edit .env and add CENSUS_API_KEY
+    ```
 
-3. Configure your keys:
+## Step 1 - Build the database locally
 
-- Copy the parameter labels from `.env.example`.
-- Add them (and your API keys) to your local `.env` at the root of this repo.
-
-## Usage
-
-### CLI
+Run the ingest script once on your macchine. By default it pulls **Israel**,
+the **last 13 years**, through the **Port of New Orleans**, from **Census**:
 
 ```bash
-# View import summary for 2017
-python cli.py imports --year 2017 --top-countries 10 --top-categories 5
-
-# Filter exports to a specific country
-python cli.py exports --year 2017 --country Israel --category weapons
-
-# Full trade summary
-python cli.py summary --year 2017
-
-#Export filtered data to CSV
-python cli.py exports --year 2017 --country Israel --export-csv israel_exports.csv
+python ingest.py
 ```
 
-Available categories: `food`, `chemicals`, `health`, `textiles`, `metals`, `machinery`, `electronics`, `vehicles`, `weapons`, `energy`, `wood_paper`, `plastics`, `other`
+Useful options:
 
-### Dashboard
+```bash
+# A different country / span
+python ingest.py --country Sudan --years-back 7
+
+# A country not in th ebuilt-in name->code map (pass the Census Schedule C code)
+python ingest.py --country "South Korea" --country-code 5800
+```
+
+The script is safe to re-run: rows are replaced by key, so you can ingest
+several countries into the **same** database by running it once per country.
+The dashboard's filters populate automatically from whatever is in the DB.
+
+Then ccommit the generated database:
+
+```bash
+git add data/trade.db
+git commit -m "Add trade data for Israel"
+```
+
+## Step 2 - Run the dashboard
+
+Locally:
 
 ```bash
 streamlit run dashboard.py
@@ -54,14 +71,22 @@ streamlit run dashboard.py
 
 (May need to use `py -m streamlit run dashboard.py`.)
 
-Opens an interactive browser dashboard with:
+The dashboard offers filters for country, port, source, direction, year range,
+and product category; bar charts for trade by category and top commodities (or
+top trading partners once multiple countries are ingested); a line chart over
+time; a treemap; an import/export split; a weaponizable/not split; and a CSV
+download.
 
-- Filters for direction, year, month, country, and product category.
-- Bar charts for trade by category and top trading partners.
-- Line chart of trade over time.
-- Treemap showing trade composition.
-- Import/export split pie chart.
-- Downloadable filtered data as CSV.
+## Step 3 - Deploy to Streamlit Community Cloud
+
+1.  Push this repository to GitHub (including the committed `data/trade.db`).
+2.  On https://share.streamlit.io, create a new app from your repo.
+3.  Set the **main files path** to `nola-trade-tracker/dashboard.py`.
+4.  Deploy. No secrets are required, because the dashboard reads only the committed
+    database, so your Census key never leaves your machine.
+
+To refresh or expand the public data later, re-run `ingest.py` locally and
+commit the updated `data/trade.db`; Streamlit redeploys on push.
 
 ## Product Categories
 
@@ -89,16 +114,22 @@ Products are classified using the Harmonized System (HS) code chapters:
 ```
 NolaTradeTracker/
 |—src/
-|  |—config.py         # Environment variables and API settings.
+|  |—config.py         # Environment variables and API settings (ingest only).
 |  |—models.py         # Data Classes (TradeRecord, TradeQuery, etc.)
 |  |—categories.py     # HS code -> product category mapping.
 |  |—query.py          # Filtering and aggregation
+|  |-database.py       # SQLite store: save (ingest) + load (dashboard)
 |  |—sources/
 |      |—census.py     # US Census Bureau API client
 |      |—comtrade.py   # UN Comtrade API client
 |      |—port_nola.py  # Port NOLA website parser
-|—cli.py               # Command-line interface
-|—dashboard.py         # Streamlit dashboard
+|
+|-data/
+|  |-trade.db          # Committed SQLite database (created by ingest.py)
+|
+|-ingest.py            # Local one-time data download + database
+|—cli.py               # Command-line interface (live API)
+|—dashboard.py         # Streamlit dashboard (reads the committed database)
 |—requirements.txt
 |—.env.example
 ```
