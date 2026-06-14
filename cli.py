@@ -41,7 +41,7 @@ def _resolve_categories(category_names: tuple[str, ...]) -> list[ProductCategory
 
 @click.group()
 def cli():
-  """NOLA Trade Tracker - Query Port of New Orleans trade data."""
+  """NOSHIP Trade Tracker - Query Port of New Orleans trade data."""
   pass
 
 

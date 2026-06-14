@@ -1,4 +1,4 @@
-"""Local one-time data ingest for the NOLA Trade Tracker.
+"""Local one-time data ingest for the NOSHIP Trade Tracker.
 
 Run this on YOUR machine (where `.env` holds your private API keys). It pulls
 trade data for a single country through a single port over a span of years and

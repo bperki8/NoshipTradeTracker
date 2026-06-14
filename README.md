@@ -1,4 +1,4 @@
-# NOLA Trade Tracker
+# NOSHIP Trade Tracker
 
 Analyze imports and exports flowing through the Port of New Orleans using public trade data.
 
