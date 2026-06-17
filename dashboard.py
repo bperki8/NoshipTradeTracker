@@ -7,6 +7,7 @@ trade API and never loads an API key. To refresh or expand the data, run
 
 Run with: streamlit run dashboard.py
 """
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -534,14 +535,14 @@ st.empty().caption(subtitle)
 
 # Dynamic legend labels
 if direction_choice == "Imports":
-    total_label = "Total Imports"
-    weapon_label = "Weaponizable Imports"
+  total_label = "Total Imports"
+  weapon_label = "Weaponizable Imports"
 elif direction_choice == "Exports":
-    total_label = "Total Exports"
-    weapon_label = "Weaponizable Exports"
+  total_label = "Total Exports"
+  weapon_label = "Weaponizable Exports"
 else:
-    total_label = "Total Trade"
-    weapon_label = "Weaponizable Trade"
+  total_label = "Total Trade"
+  weapon_label = "Weaponizable Trade"
 
 total_time_df = (
   filtered_df.groupby("period")["value_usd"]
@@ -561,6 +562,7 @@ merged = total_time_df.merge(
   how="left",
   suffixes=("_total", "_weapon")
 )
+merged["period"] = merged["period"].astype(str).str[:4]
 merged["value_usd_weapon"] = merged["value_usd_weapon"].fillna(0)
 merged["pct_weaponizable"] = (
   merged["value_usd_weapon"] / merged["value_usd_total"]
@@ -568,6 +570,7 @@ merged["pct_weaponizable"] = (
 
 fig = go.Figure()
 
+# --- Total trade trace ---
 fig.add_trace(go.Scatter(
   x=merged["period"],
   y=merged["value_usd_total"],
@@ -575,8 +578,14 @@ fig.add_trace(go.Scatter(
   name=total_label,
   line=dict(color="#000000", width=2),
   yaxis="y1",
+  hovertemplate=(
+    "<b>%{x}</b><br>" +
+    f"{total_label}: $%{{y:,.0f}}<br>" +
+    "<extra></extra>"
+  ),
 ))
 
+# --- Weaponizable trade trace ---
 fig.add_trace(go.Scatter(
   x=merged["period"],
   y=merged["value_usd_weapon"],
@@ -584,8 +593,14 @@ fig.add_trace(go.Scatter(
   name=weapon_label,
   line=dict(color="#007A3D", width=2),
   yaxis="y1",
+  hovertemplate=(
+    "<b>%{x}</b><br>" +
+    f"{weapon_label}: $%{{y:,.0f}}<br>" +
+    "<extra></extra>"
+  ),
 ))
 
+# --- Percentage trace ---
 fig.add_trace(go.Scatter(
   x=merged["period"],
   y=merged["pct_weaponizable"],
@@ -593,6 +608,14 @@ fig.add_trace(go.Scatter(
   name="% Weaponizable",
   line=dict(color="#D90000", width=2, dash="dash"),
   yaxis="y2",
+  hovertemplate=(
+    "<b>%{x}</b><br>" +
+    "% Weaponizable: %{y:.1f}%<br>" +
+    f"{weapon_label}: $%{{customdata[0]:,.0f}}<br>" +
+    f"{total_label}: $%{{customdata[1]:,.0f}}<br>" +
+    "<extra></extra>"
+  ),
+  customdata=merged[["value_usd_weapon", "value_usd_total"]],
 ))
 
 fig.update_layout(
@@ -609,7 +632,6 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
 
 
 # ------------------------------------------------------------
@@ -648,14 +670,34 @@ treemap_df = (
     .fillna({"weaponizable_value": 0})
 )
 
-# Sort by total value
-treemap_df = treemap_df.sort_values("value_usd", ascending=False)
+# --- Add category-level rows so hover works on parent nodes ---
+category_totals = treemap_df.groupby("category")["value_usd"].sum()
+category_weaponizable_totals = (
+  treemap_df[treemap_df["is_weaponizable"] == 1]
+    .groupby("category")["value_usd"]
+    .sum()
+)
+
+category_level = (
+  pd.DataFrame({
+    "category": category_totals.index,
+    "commodity": "(category-level)",
+    "is_weaponizable": None,
+    "value_usd": category_totals.values,
+    "weaponizable_value": category_weaponizable_totals.reindex(category_totals.index).fillna(0).values,
+  })
+  .merge(category_ratio, on="category")
+)
+
+treemap_df = pd.concat([treemap_df, category_level], ignore_index=True)
 
 # --- Color Logic ---
 treemap_df["color_value"] = treemap_df.apply(
-  lambda row: row["is_weaponizable"]
-  if row["commodity"] != "(category-level)"
-  else row["weaponizable_ratio"],
+  lambda row: (
+    row["weaponizable_ratio"]
+    if row["commodity"] == "(category-level)"
+    else row["is_weaponizable"]
+  ),
   axis=1
 )
 
@@ -666,7 +708,6 @@ treemap_df["hover"] = treemap_df.apply(
     f"<b>Commodity:</b> {row['commodity']}<br>"
     f"<b>Total Value:</b> ${row['value_usd']:,.0f}<br>"
     f"<b>Weaponizable Value:</b> ${row['weaponizable_value']:,.0f}<br>"
-    f"<b>Commodity Weaponizable:</b> {'Yes' if row['is_weaponizable'] else 'No'}<br>"
     f"<b>Category Weaponizable %:</b> {row['weaponizable_ratio']*100:.1f}%"
   ),
   axis=1
@@ -688,7 +729,25 @@ fig_tree = px.treemap(
   range_color=(0, 1),
 )
 
-fig_tree.update_traces(hovertemplate="%{customdata[0]}<extra></extra>")
+# --- FIX HOVER FOR CATEGORY NODES ---
+# Build mapping from (category, commodity) → hover text
+hover_map = {
+  (row["category"], row["commodity"]): row["hover"]
+  for _, row in treemap_df.iterrows()
+}
+
+# Assign hover text in the exact order Plotly created nodes
+for trace in fig_tree.data:
+  new_customdata = []
+  for node_id in trace.ids:
+    parts = node_id.split("/")
+    if len(parts) == 1:
+      key = (parts[0], "(category-level)")
+    else:
+      key = (parts[0], parts[1])
+    new_customdata.append(hover_map.get(key, ""))
+  trace.customdata = new_customdata
+  trace.hovertemplate = "%{customdata}<extra></extra>"
 
 fig_tree.update_coloraxes(
   colorbar=dict(
@@ -707,18 +766,34 @@ st.plotly_chart(fig_tree, use_container_width=True)
 # ------------------------------------------------------------
 st.subheader("Weaponizability by Category")
 st.empty().caption(subtitle)
+
+# Aggregate
 stack_df = (
   filtered_df.groupby(["category", "is_weaponizable"])["value_usd"]
   .sum()
   .reset_index()
 )
+
+# Human-readable labels
 stack_df["weaponizable_label"] = stack_df["is_weaponizable"].map({
   0: "Not Weaponizable",
   1: "Weaponizable",
 })
+
+# Compute totals + percentages for hover
+totals = stack_df.groupby("category")["value_usd"].sum().rename("total_value")
+stack_df = stack_df.merge(totals, on="category")
+stack_df["pct_of_category"] = (stack_df["value_usd"] / stack_df["total_value"]) * 100
+
+# Order categories by total value
 category_order = (
-  stack_df.groupby("category")["value_usd"].sum().sort_values(ascending=False).index
+  stack_df.groupby("category")["value_usd"]
+  .sum()
+  .sort_values(ascending=False)
+  .index
 )
+
+# Build figure
 fig_stack = px.bar(
   stack_df,
   x="category",
@@ -730,7 +805,29 @@ fig_stack = px.bar(
     "Weaponizable": "#D90000",
   },
 )
-fig_stack.update_layout(barmode="stack", legend_title_text=None)
+
+# Correct customdata assignment per trace
+for trace in fig_stack.data:
+  label = trace.name  # "Weaponizable" or "Not Weaponizable"
+  mask = stack_df["weaponizable_label"] == label
+
+  trace.customdata = stack_df.loc[
+    mask, ["weaponizable_label", "pct_of_category", "total_value"]
+  ].to_numpy()
+
+  trace.hovertemplate = (
+    "<b>%{x}</b><br>" +
+    "%{customdata[0]}: $%{y:,.0f}<br>" +
+    "Share of Category: %{customdata[1]:.1f}%<br>" +
+    "Category Total: $%{customdata[2]:,.0f}<br>" +
+    "<extra></extra>"
+  )
+
+fig_stack.update_layout(
+  barmode="stack",
+  legend_title_text=None
+)
+
 st.plotly_chart(fig_stack, use_container_width=True)
 
 
