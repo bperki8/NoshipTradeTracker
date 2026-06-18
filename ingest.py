@@ -63,6 +63,19 @@ def _resolve_country_code(country: str, country_code: str | None) -> str:
     )
   return code
 
+def _months_for_year(year: int, today: date) -> list[int]:
+  """Months to request for a given year.
+
+  For past years, all 12 months. For the current year, only months up to and
+  including the current month (later months aren't published yet, so querying
+  them just produces errors). For any future year, nothing.
+  """
+  if year < today.year:
+    return list(range(1,13))
+  if year == today.year:
+    return list(range(1, today.month + 1))
+  return []
+
 
 @click.command()
 @click.option("--country", default="Israel", show_default=True,
@@ -87,6 +100,7 @@ def main(country, country_code, years_back, district, source, hs_level, db_path)
   code = _resolve_country_code(country, country_code)
   port_name = DISTRICT_TO_PORT_NAME.get(district, f"District {district}")
 
+  today = date.today()
   current_year = date.today().year
   start_year = current_year - years_back
   years = list(range(start_year, current_year + 1))
@@ -101,29 +115,31 @@ def main(country, country_code, years_back, district, source, hs_level, db_path)
   total_saved = 0
 
   for year in years:
-    for direction, fetch in (
-      (TradeDirection.IMPORT, src.fetch_imports),
-      (TradeDirection.EXPORT, src.fetch_exports),
-    ):
-      label = direction.value
-      try:
-        records = fetch(
-          year,
-          country_code=code,
-          hs_level=hs_level,  # <-- NEW
-        )
-      except Exception as e:
-        click.echo(f"   {year} {label:7s}   ERROR: {e}")
-        continue
+    for month in _months_for_year(year, today):
+      for direction, fetch in (
+        (TradeDirection.IMPORT, src.fetch_imports),
+        (TradeDirection.EXPORT, src.fetch_exports),
+      ):
+        label = direction.value
+        try:
+          records = fetch(
+            year,
+            month=month,
+            country_code=code,
+            hs_level=hs_level,  # <-- NEW
+          )
+        except Exception as e:
+          click.echo(f"   {year}-{month:02d} {label:7s}   ERROR: {e}")
+          continue
 
-      # Keep stored port label in sync with requested district
-      for r in records:
-        r.port_code = district
-        r.port_name = port_name
+        # Keep stored port label in sync with requested district
+        for r in records:
+          r.port_code = district
+          r.port_name = port_name
 
-      saved = database.save_records(records, db_path=db_path)
-      total_saved += saved
-      click.echo(f"   {year} {label:7s}   {saved:6d} records")
+        saved = database.save_records(records, db_path=db_path)
+        total_saved += saved
+        click.echo(f"   {year}-{month:02d} {label:7s}   {saved:6d} records")
 
   click.echo(f"\nDone. Wrote {total_saved} records to {db_path}.")
   click.echo("Commit this file so the deployed dashboard can read it:")

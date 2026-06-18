@@ -7,6 +7,7 @@ trade API and never loads an API key. To refresh or expand the data, run
 
 Run with: streamlit run dashboard.py
 """
+import calendar
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -17,6 +18,11 @@ from analytics import log_visit
 from src.models import ProductCategory
 from src import database
 from streamlit_js_eval import streamlit_js_eval
+
+def format_period(period: str) -> str:
+  year, month = period.split("-")
+  month_abbr = calendar.month_abbr[int(month)].upper()
+  return f"{month_abbr} {year}"
 
 st.set_page_config(
   page_title="NOSHIP Trade Tracker",
@@ -274,15 +280,33 @@ if df.empty:
 # ------------------------------------------------------------
 st.sidebar.header("Filters")
 
-year_min, year_max = int(df["year"].min()), int(df["year"].max())
-if year_min < year_max:
-  year_range = st.sidebar.slider(
-    "Year Range", min_value=year_min, max_value=year_max,
-    value=(year_min, year_max),
-  )
-else:
-  year_range = (year_min, year_max)
-  st.sidebar.markdown(f"**Year:** {year_min}")
+periods = sorted(df["period"].unique())
+
+# Build mapping: "AUG 2026" → "2026-08"
+pretty_to_raw = {format_period(p): p for p in periods}
+pretty_periods = list(pretty_to_raw.keys())
+
+# Default to first and last
+start_pretty_default = pretty_periods[0]
+end_pretty_default = pretty_periods[-1]
+
+start_pretty = st.sidebar.selectbox(
+  "Start",
+  pretty_periods,
+  index=0  # first item
+)
+
+end_pretty = st.sidebar.selectbox(
+  "End",
+  pretty_periods,
+  index=len(pretty_periods) - 1  # last item
+)
+
+period_range = (
+  pretty_to_raw[start_pretty],
+  pretty_to_raw[end_pretty]
+)
+
 
 ports = sorted(df["port_name"].dropna().unique().tolist())
 selected_port = st.sidebar.selectbox("Port Shipped Through", ports, index=0)
@@ -315,7 +339,7 @@ if direction_choice == "Exports":
   filtered_df = filtered_df[filtered_df["direction"] == "export"]
 
 filtered_df = filtered_df[
-  (filtered_df["year"] >= year_range[0]) & (filtered_df["year"] <= year_range[1])
+  (filtered_df["period"] >= period_range[0]) & (filtered_df["period"] <= period_range[1])
 ]
 
 if selected_categories:
@@ -359,9 +383,9 @@ def format_list(items):
 category_phrase = format_list(selected_categories)
 
 year_text = (
-  f"({year_range[0]}–{year_range[1]})"
-  if year_range[0] != year_range[1]
-  else f"({year_range[0]})"
+  f"{format_period(period_range[0])}-{format_period(period_range[1])}"
+  if period_range[0] != period_range[1]
+  else f"{format_period(period_range[0])}"
 )
 
 # Build the commodity phrase cleanly
@@ -373,17 +397,17 @@ else:
 if direction_choice == "Exports":
   subtitle = (
     f"All {commodity_phrase} exported from the Port of New Orleans "
-    f"to Israel {year_text}."
+    f"to Israel ({year_text})."
   )
 elif direction_choice == "Imports":
   subtitle = (
     f"All {commodity_phrase} imported to the Port of New Orleans "
-    f"from Israel {year_text}."
+    f"from Israel ({year_text})."
   )
 else:
   subtitle = (
     f"All {commodity_phrase} shipped between the Port of New Orleans "
-    f"and Israel {year_text}."
+    f"and Israel ({year_text})."
   )
 
 
@@ -414,8 +438,7 @@ with col2:
 with col3:
   metric_card("Not Weaponizable", f"${not_weaponizable_value / 1e6:,.1f}M", "metric-green")
 with col4:
-  years_covered_text = f"{year_range[0]} - {year_range[1]}" if year_range[0] != year_range[1] else f"{year_range[0]}"
-  metric_card("Years Covered", years_covered_text, "metric-black")
+  metric_card("Date Range", year_text, "metric-black")
 
 
 # ------------------------------------------------------------
@@ -533,6 +556,13 @@ with pie_col2:
 st.subheader("Trade Value Over Time")
 st.empty().caption(subtitle)
 
+# --- Toggle for Year vs Month ---
+granularity = st.radio(
+  "Time Granularity",
+  ["Yearly", "Monthly"],
+  horizontal=True,
+)
+
 # Dynamic legend labels
 if direction_choice == "Imports":
   total_label = "Total Imports"
@@ -544,42 +574,62 @@ else:
   total_label = "Total Trade"
   weapon_label = "Weaponizable Trade"
 
+# --- Ensure period is a datetime ---
+filtered_df["period"] = pd.to_datetime(filtered_df["period"], errors="coerce")
+
+# --- Build grouping key based on toggle ---
+if granularity == "Yearly":
+  filtered_df["period_group"] = filtered_df["period"].dt.year.astype(str)
+else:
+  filtered_df["period_group"] = filtered_df["period"].dt.to_period("M").astype(str)
+
+# --- Aggregate ---
 total_time_df = (
-  filtered_df.groupby("period")["value_usd"]
-  .sum()
-  .reset_index()
-)
-weapon_time_df = (
-  filtered_df[filtered_df["is_weaponizable"] == 1]
-  .groupby("period")["value_usd"]
+  filtered_df.groupby("period_group")["value_usd"]
   .sum()
   .reset_index()
 )
 
+weapon_time_df = (
+  filtered_df[filtered_df["is_weaponizable"] == 1]
+  .groupby("period_group")["value_usd"]
+  .sum()
+  .reset_index()
+)
+
+# --- Merge ---
 merged = total_time_df.merge(
   weapon_time_df,
-  on="period",
+  on="period_group",
   how="left",
   suffixes=("_total", "_weapon")
 )
-merged["period"] = merged["period"].astype(str).str[:4]
 merged["value_usd_weapon"] = merged["value_usd_weapon"].fillna(0)
 merged["pct_weaponizable"] = (
   merged["value_usd_weapon"] / merged["value_usd_total"]
 ).fillna(0) * 100
 
+# --- X-axis label formatting ---
+if granularity == "Yearly":
+  x_vals = merged["period_group"]
+  hover_x = "<b>%{x}</b><br>"
+else:
+  # Monthly: convert "YYYY-MM" to nicer "YYYY‑MM"
+  x_vals = merged["period_group"]
+  hover_x = "<b>%{x}</b><br>"  # already clean
+
 fig = go.Figure()
 
 # --- Total trade trace ---
 fig.add_trace(go.Scatter(
-  x=merged["period"],
+  x=x_vals,
   y=merged["value_usd_total"],
   mode="lines+markers",
   name=total_label,
   line=dict(color="#000000", width=2),
   yaxis="y1",
   hovertemplate=(
-    "<b>%{x}</b><br>" +
+    hover_x +
     f"{total_label}: $%{{y:,.0f}}<br>" +
     "<extra></extra>"
   ),
@@ -587,14 +637,14 @@ fig.add_trace(go.Scatter(
 
 # --- Weaponizable trade trace ---
 fig.add_trace(go.Scatter(
-  x=merged["period"],
+  x=x_vals,
   y=merged["value_usd_weapon"],
   mode="lines+markers",
   name=weapon_label,
   line=dict(color="#007A3D", width=2),
   yaxis="y1",
   hovertemplate=(
-    "<b>%{x}</b><br>" +
+    hover_x +
     f"{weapon_label}: $%{{y:,.0f}}<br>" +
     "<extra></extra>"
   ),
@@ -602,20 +652,20 @@ fig.add_trace(go.Scatter(
 
 # --- Percentage trace ---
 fig.add_trace(go.Scatter(
-  x=merged["period"],
+  x=x_vals,
   y=merged["pct_weaponizable"],
   mode="lines+markers",
   name="% Weaponizable",
   line=dict(color="#D90000", width=2, dash="dash"),
   yaxis="y2",
+  customdata=merged[["value_usd_weapon", "value_usd_total"]],
   hovertemplate=(
-    "<b>%{x}</b><br>" +
+    hover_x +
     "% Weaponizable: %{y:.1f}%<br>" +
     f"{weapon_label}: $%{{customdata[0]:,.0f}}<br>" +
     f"{total_label}: $%{{customdata[1]:,.0f}}<br>" +
     "<extra></extra>"
   ),
-  customdata=merged[["value_usd_weapon", "value_usd_total"]],
 ))
 
 fig.update_layout(
