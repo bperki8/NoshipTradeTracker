@@ -41,9 +41,19 @@ COUNTRY_NAME_TO_CODE: dict[str, str] = {
   "india": "5330",
 }
 
-# Customs district code -> human-readable port name.
-DISTRICT_TO_PORT_NAME: dict[str, str] = {
-  "2101": "New Orleans, LA",
+# Census port code -> human-readable port name.
+# Find port codes here https://www.census.gov/foreign-trade/schedules/d/distname.html
+PORT_CODE_TO_NAME: dict[str, str] = {
+  "2002": "New Orleans, LA",
+  "2004": "Baton Rouge, LA",
+  "2010": "Gramercy, LA",
+  "5301": "Houston, TX",
+  "5309": "HOUSTON INTERCONTL AIRP, TX",
+  "5310": "Galveston, TX",
+  "2101": "Port Arthur, TX",
+  "1901": "Mobile, AL",
+  "1902": "Gulfport, MS",
+  "2301": "Brownsville, TX",
 }
 
 SOURCE_MAP = {
@@ -84,8 +94,8 @@ def _months_for_year(year: int, today: date) -> list[int]:
               help="Census Schedule C country code. Overrides the name lookup.")
 @click.option("--years-back", default=13, show_default=True, type=int,
               help="How many years back from the current year to fetch.")
-@click.option("--district", default="2101", show_default=True,
-              help="Customs district code (default 2101 = Port of New Orleans).")
+@click.option("--port", default="2002", show_default=True,
+              help="Census port code (default 2002 = Port of New Orleans).")
 @click.option("--source", default="census", show_default=True,
               type=click.Choice(list(SOURCE_MAP.keys()), case_sensitive=False),
               help="Data source to ingest from.")
@@ -94,11 +104,11 @@ def _months_for_year(year: int, today: date) -> list[int]:
               help="HS specificity level to request from the API.")
 @click.option("--db", "db_path", default=str(database.DEFAULT_DB_PATH), show_default=True,
               help="Path to the SQLite database to write.")
-def main(country, country_code, years_back, district, source, hs_level, db_path):
+def main(country, country_code, years_back, port, source, hs_level, db_path):
   """Download trade data into the local database."""
   src = SOURCE_MAP[source]
   code = _resolve_country_code(country, country_code)
-  port_name = DISTRICT_TO_PORT_NAME.get(district, f"District {district}")
+  port_name = PORT_CODE_TO_NAME.get(port, f"Port {port}")
 
   today = date.today()
   current_year = date.today().year
@@ -107,7 +117,7 @@ def main(country, country_code, years_back, district, source, hs_level, db_path)
 
   click.echo(
     f"Ingesting {source} data for {country} (code {code}) through "
-    f"{port_name} [{district}]"
+    f"{port_name} [{port}]"
   )
   click.echo(f"HS Level: {hs_level}")
   click.echo(f"Years: {years[0]}..{years[-1]} ({len(years)} calendar years)\n")
@@ -126,15 +136,16 @@ def main(country, country_code, years_back, district, source, hs_level, db_path)
             year,
             month=month,
             country_code=code,
-            hs_level=hs_level,  # <-- NEW
+            hs_level=hs_level,
+            port=port,
           )
         except Exception as e:
           click.echo(f"   {year}-{month:02d} {label:7s}   ERROR: {e}")
           continue
 
-        # Keep stored port label in sync with requested district
+        # Keep stored port label in sync with requested port
         for r in records:
-          r.port_code = district
+          r.port_code = port
           r.port_name = port_name
 
         saved = database.save_records(records, db_path=db_path)
