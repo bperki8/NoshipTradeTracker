@@ -91,6 +91,7 @@ def fetch_trade_data(
     country_code: str | None = None,
     hs_chapter: str | None = None,
     hs_level: str | None = None,
+    port: str | None = NOLA_CENSUS_PORT_CODE,
 ) -> list[TradeRecord]:
   """Fetch trade data from the Census Bureau Api.
   
@@ -133,8 +134,11 @@ def fetch_trade_data(
   params = {
     "get": get_vars,
     "key": api_key,
-    "PORT": NOLA_CENSUS_PORT_CODE,
   }
+
+  if port is not None:
+    # Find port codes here: https://www.census.gov/foreign-trade/schedules/d/distname.html
+    params["PORT"] = str(port)
 
   if year and month:
     if direction == TradeDirection.IMPORT:
@@ -173,6 +177,7 @@ def fetch_trade_data(
       params["E_COMMODITY"] = f"{hs_chapter}*"
   
   response = requests.get(url, params=params, timeout=30)
+  # print("DEBUG URL:", response.url)
   response.raise_for_status()
 
   data = response.json()
