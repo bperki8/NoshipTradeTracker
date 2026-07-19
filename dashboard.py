@@ -308,7 +308,9 @@ period_range = (
 )
 
 
-ports = sorted(df["port_name"].dropna().unique().tolist())
+ports = df["port_name"].dropna().unique().tolist()
+# Ensure New Orleans is first
+ports = sorted(ports, key=lambda p: 0 if p == "New Orleans, LA" else 1)
 selected_port = st.sidebar.selectbox("Port Shipped Through", ports, index=0)
 
 countries = sorted(df["country_name"].dropna().unique().tolist())
