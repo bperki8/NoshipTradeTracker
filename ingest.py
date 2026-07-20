@@ -46,7 +46,7 @@ COUNTRY_NAME_TO_CODE: dict[str, str] = {
 PORT_CODE_TO_NAME: dict[str, str] = {
   "2002": "New Orleans, LA",
   "2004": "Baton Rouge, LA",
-  "2010": "Gramercy, LA",
+  "2010": "Gramercy, LA", # nothing weaponizable as of 2026-07-20, so data not included
   "5301": "Houston, TX",
   "5309": "Houston Intercontinental Airport, TX",
   "5310": "Galveston, TX",
