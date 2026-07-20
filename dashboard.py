@@ -307,6 +307,45 @@ period_range = (
   pretty_to_raw[end_pretty]
 )
 
+# --- Backwards-compatible weaponizability mapping for new enum field ---
+# Add a small sidebar control to pick the definition
+weapon_mode = st.sidebar.selectbox(
+    "Weaponizability Definition",
+    [
+        "Explicit",
+        "Conservative",
+        "Worst-case",
+    ],
+    index=1,  # default to Conservative
+)
+
+# Map the enum string values to sets of allowed values for "weaponizable"
+WEAPONIZABILITY_SETS = {
+    "Explicit": {"WeaponizabilityLikelihood.HIGHEST"},
+    "Conservative": {"WeaponizabilityLikelihood.HIGHEST", "WeaponizabilityLikelihood.HIGH"},
+    "Worst-case": {
+        "WeaponizabilityLikelihood.HIGHEST",
+        "WeaponizabilityLikelihood.HIGH",
+        "WeaponizabilityLikelihood.LOW",
+    },
+}
+
+# Normalize the column name if needed and create a boolean column `is_weaponizable`
+# This keeps the rest of the code unchanged (it expects 0/1)
+if "potential_to_weaponize" in df.columns:
+    # Ensure strings are normalized (strip, handle None)
+    df["potential_to_weaponize"] = df["potential_to_weaponize"].fillna("").astype(str).str.strip()
+    allowed = WEAPONIZABILITY_SETS[weapon_mode]
+    # Create boolean 1/0 column used throughout the dashboard
+    df["is_weaponizable"] = df["potential_to_weaponize"].apply(lambda v: 1 if v in allowed else 0)
+else:
+    # If the old column still exists, keep it (backwards compatibility)
+    if "is_weaponizable" in df.columns:
+        df["is_weaponizable"] = df["is_weaponizable"].fillna(0).astype(int)
+    else:
+        # Fallback: no weaponizability info
+        df["is_weaponizable"] = 0
+
 
 ports = df["port_name"].dropna().unique().tolist()
 # Ensure New Orleans is first
