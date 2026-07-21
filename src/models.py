@@ -31,11 +31,17 @@ class ProductCategory(Enum):
   WEAPONS = "Weapons & Defense"
   WOOD_PAPER = "Wood & Paper"
 
+class WeaponizabilityLikelihood(Enum):
+  LOWEST = "Definitely Not Weaponizable"
+  LOW = "Possibly Weaponizable"
+  HIGH = "Likely Weaponizable"
+  HIGHEST = "Definitely a Weapon"
+
 
 class ProductType:
   """A collection of different categorization methods for an import or export shimpent."""
   category: ProductCategory
-  potential_to_weaponize: bool
+  potential_to_weaponize: WeaponizabilityLikelihood
 
   def __init__(self, category, potential_to_weaponize):
     self.category = category

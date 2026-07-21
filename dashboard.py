@@ -307,6 +307,45 @@ period_range = (
   pretty_to_raw[end_pretty]
 )
 
+# --- Backwards-compatible weaponizability mapping for new enum field ---
+# Add a small sidebar control to pick the definition
+weapon_mode = st.sidebar.selectbox(
+    "Weaponizability Definition",
+    [
+        "Explicit",
+        "Conservative",
+        "Worst-case",
+    ],
+    index=1,  # default to Conservative
+)
+
+# Map the enum string values to sets of allowed values for "weaponizable"
+WEAPONIZABILITY_SETS = {
+    "Explicit": {"WeaponizabilityLikelihood.HIGHEST"},
+    "Conservative": {"WeaponizabilityLikelihood.HIGHEST", "WeaponizabilityLikelihood.HIGH"},
+    "Worst-case": {
+        "WeaponizabilityLikelihood.HIGHEST",
+        "WeaponizabilityLikelihood.HIGH",
+        "WeaponizabilityLikelihood.LOW",
+    },
+}
+
+# Normalize the column name if needed and create a boolean column `is_weaponizable`
+# This keeps the rest of the code unchanged (it expects 0/1)
+if "potential_to_weaponize" in df.columns:
+    # Ensure strings are normalized (strip, handle None)
+    df["potential_to_weaponize"] = df["potential_to_weaponize"].fillna("").astype(str).str.strip()
+    allowed = WEAPONIZABILITY_SETS[weapon_mode]
+    # Create boolean 1/0 column used throughout the dashboard
+    df["is_weaponizable"] = df["potential_to_weaponize"].apply(lambda v: 1 if v in allowed else 0)
+else:
+    # If the old column still exists, keep it (backwards compatibility)
+    if "is_weaponizable" in df.columns:
+        df["is_weaponizable"] = df["is_weaponizable"].fillna(0).astype(int)
+    else:
+        # Fallback: no weaponizability info
+        df["is_weaponizable"] = 0
+
 
 ports = df["port_name"].dropna().unique().tolist()
 # Ensure New Orleans is first
@@ -579,37 +618,55 @@ else:
 # --- Ensure period is a datetime ---
 filtered_df["period"] = pd.to_datetime(filtered_df["period"], errors="coerce")
 
-# --- Build grouping key based on toggle ---
+# --- Build period column as Period objects (keeps ordering and makes ranges easy) ---
 if granularity == "Yearly":
-  filtered_df["period_group"] = filtered_df["period"].dt.year.astype(str)
+  filtered_df["period_period"] = filtered_df["period"].dt.to_period("Y")
+  freq = "Y"
 else:
-  filtered_df["period_group"] = filtered_df["period"].dt.to_period("M").astype(str)
+  filtered_df["period_period"] = filtered_df["period"].dt.to_period("M")
+  freq = "M"
 
-# --- Aggregate ---
+# --- Aggregate on the Period object ---
 total_time_df = (
-  filtered_df.groupby("period_group")["value_usd"]
+  filtered_df.groupby("period_period")["value_usd"]
   .sum()
-  .reset_index()
+  .rename("value_usd_total")
+  .to_frame()
 )
 
 weapon_time_df = (
   filtered_df[filtered_df["is_weaponizable"] == 1]
-  .groupby("period_group")["value_usd"]
+  .groupby("period_period")["value_usd"]
   .sum()
-  .reset_index()
+  .rename("value_usd_weapon")
+  .to_frame()
 )
 
-# --- Merge ---
-merged = total_time_df.merge(
-  weapon_time_df,
-  on="period_group",
-  how="left",
-  suffixes=("_total", "_weapon")
-)
-merged["value_usd_weapon"] = merged["value_usd_weapon"].fillna(0)
+# --- Build full period range from min to max and reindex to include missing periods ---
+start = filtered_df["period_period"].min()
+end = filtered_df["period_period"].max()
+if pd.isna(start) or pd.isna(end):
+  # No valid periods; create empty frame
+  full_index = pd.period_range(start=0, end=-1, freq=freq)  # empty
+else:
+  full_index = pd.period_range(start=start, end=end, freq=freq)
+
+total_time_df = total_time_df.reindex(full_index).fillna(0)
+weapon_time_df = weapon_time_df.reindex(full_index).fillna(0)
+
+# --- Merge the two aggregated frames on the PeriodIndex ---
+merged = total_time_df.join(weapon_time_df, how="left").fillna(0)
+
+# --- Convert index to string for plotting x axis (YYYY or YYYY-MM) ---
+merged = merged.reset_index().rename(columns={"index": "period_period"})
+merged["period_group"] = merged["period_period"].astype(str)
+
+# --- Compute percentage safely (avoid division by zero) ---
 merged["pct_weaponizable"] = (
-  merged["value_usd_weapon"] / merged["value_usd_total"]
-).fillna(0) * 100
+  (merged["value_usd_weapon"] / merged["value_usd_total"].replace({0: pd.NA}))
+  .fillna(0)
+  * 100
+)
 
 # --- X-axis label formatting ---
 if granularity == "Yearly":

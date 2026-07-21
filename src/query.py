@@ -96,7 +96,7 @@ def to_dataframe(records: list[TradeRecord]) -> pd.DataFrame:
       "hs_code": r.hs_code,
       "commodity": r.commodity_description,
       "category": r.type.category.value,
-      "is_weaponizable": r.type.potential_to_weaponize,
+      "potential_to_weaponize": r.type.potential_to_weaponize,
       "value_usd": r.value_usd,
       "weight_kg": r.weight_kg,
       "year": r.year,
