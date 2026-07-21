@@ -618,37 +618,55 @@ else:
 # --- Ensure period is a datetime ---
 filtered_df["period"] = pd.to_datetime(filtered_df["period"], errors="coerce")
 
-# --- Build grouping key based on toggle ---
+# --- Build period column as Period objects (keeps ordering and makes ranges easy) ---
 if granularity == "Yearly":
-  filtered_df["period_group"] = filtered_df["period"].dt.year.astype(str)
+  filtered_df["period_period"] = filtered_df["period"].dt.to_period("Y")
+  freq = "Y"
 else:
-  filtered_df["period_group"] = filtered_df["period"].dt.to_period("M").astype(str)
+  filtered_df["period_period"] = filtered_df["period"].dt.to_period("M")
+  freq = "M"
 
-# --- Aggregate ---
+# --- Aggregate on the Period object ---
 total_time_df = (
-  filtered_df.groupby("period_group")["value_usd"]
+  filtered_df.groupby("period_period")["value_usd"]
   .sum()
-  .reset_index()
+  .rename("value_usd_total")
+  .to_frame()
 )
 
 weapon_time_df = (
   filtered_df[filtered_df["is_weaponizable"] == 1]
-  .groupby("period_group")["value_usd"]
+  .groupby("period_period")["value_usd"]
   .sum()
-  .reset_index()
+  .rename("value_usd_weapon")
+  .to_frame()
 )
 
-# --- Merge ---
-merged = total_time_df.merge(
-  weapon_time_df,
-  on="period_group",
-  how="left",
-  suffixes=("_total", "_weapon")
-)
-merged["value_usd_weapon"] = merged["value_usd_weapon"].fillna(0)
+# --- Build full period range from min to max and reindex to include missing periods ---
+start = filtered_df["period_period"].min()
+end = filtered_df["period_period"].max()
+if pd.isna(start) or pd.isna(end):
+  # No valid periods; create empty frame
+  full_index = pd.period_range(start=0, end=-1, freq=freq)  # empty
+else:
+  full_index = pd.period_range(start=start, end=end, freq=freq)
+
+total_time_df = total_time_df.reindex(full_index).fillna(0)
+weapon_time_df = weapon_time_df.reindex(full_index).fillna(0)
+
+# --- Merge the two aggregated frames on the PeriodIndex ---
+merged = total_time_df.join(weapon_time_df, how="left").fillna(0)
+
+# --- Convert index to string for plotting x axis (YYYY or YYYY-MM) ---
+merged = merged.reset_index().rename(columns={"index": "period_period"})
+merged["period_group"] = merged["period_period"].astype(str)
+
+# --- Compute percentage safely (avoid division by zero) ---
 merged["pct_weaponizable"] = (
-  merged["value_usd_weapon"] / merged["value_usd_total"]
-).fillna(0) * 100
+  (merged["value_usd_weapon"] / merged["value_usd_total"].replace({0: pd.NA}))
+  .fillna(0)
+  * 100
+)
 
 # --- X-axis label formatting ---
 if granularity == "Yearly":
